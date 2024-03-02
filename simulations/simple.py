@@ -1,7 +1,9 @@
 class Simple:
-    def __init__(self, x, y):
+    def __init__(self, x, y, x_val=1, y_val=1):
         self.x = x  # Quantity of asset x
         self.y = y  # Quantity of asset y
+        self.x_val = x_val  # Value of one unit of x in USD
+        self.y_val = y_val  # Value of one unit of y in USD
         self.k = x * y  # Constant product
 
     def add_liquidity(self, delta_x, delta_y):
@@ -56,3 +58,35 @@ class Simple:
         self.x = new_x
         self.y = new_y
         return delta_x
+
+    def set_x_val(self, new_x_val):
+        """
+        Set the USD value of one unit of x.
+
+        :param new_x_val: New value of one unit of x in USD.
+        """
+        self.x_val = new_x_val
+
+    def set_y_val(self, new_y_val):
+        """
+        Set the USD value of one unit of y.
+
+        :param new_y_val: New value of one unit of y in USD.
+        """
+        self.y_val = new_y_val
+
+    def get_x_value_in_usd(self):
+        """
+        Calculate the total USD value of x in the pool.
+
+        :return: The total value of x in USD.
+        """
+        return self.x * self.x_val
+
+    def get_y_value_in_usd(self):
+        """
+        Calculate the total USD value of y in the pool.
+
+        :return: The total value of y in USD.
+        """
+        return self.y * self.y_val
