@@ -1,61 +1,46 @@
 class Balancer:
-    def __init__(self, initial_tokens, initial_weights, initial_balances):
-        """
-        Initialize a Balancer pool with multiple tokens.
-        :param initial_tokens: List of tokens in the pool.
-        :param initial_weights: Corresponding weights of the tokens.
-        :param initial_balances: Initial balance of each token.
-        """
-        self.tokens = initial_tokens
-        self.weights = {
-            token: weight for token, weight in zip(initial_tokens, initial_weights)
-        }
-        self.balances = {
-            token: balance for token, balance in zip(initial_tokens, initial_balances)
-        }
-        self.total_weight = sum(initial_weights)
+    def __init__(self, x, y, weight_x, weight_y):
+        self.x = x  # Quantity of asset x
+        self.y = y  # Quantity of asset y
+        self.weight_x = weight_x  # Weight of asset x
+        self.weight_y = weight_y  # Weight of asset y
 
-    def swap(self, token_in, token_out, amount_in):
+    def swap_x_for_y(self, delta_x):
         """
-        Simulate a token swap in the pool.
-        :param token_in: Token being swapped in.
-        :param token_out: Token being swapped out.
-        :param amount_in: Amount of token_in being swapped.
-        :return: Amount of token_out received.
+        Swap x for y using the Balancer AMM model.
+
+        :param delta_x: Amount of x being swapped.
+        :return: The amount of y received in the swap.
         """
-        # Simplified swap logic, ignoring fees and slippage for demonstration.
-        weight_in = self.weights[token_in]
-        weight_out = self.weights[token_out]
-        balance_in = self.balances[token_in] + amount_in
-        balance_out = self.balances[token_out]
-
-        # Balancer's formula to determine amount out, simplified for illustration
-        amount_out = (balance_out * amount_in * weight_in) / (balance_in * weight_out)
-
+        # Calculate new balance of x after adding delta_x
+        new_x = self.x + delta_x
+        # Calculate the invariant before the swap
+        invariant_before = (self.x**self.weight_x) * (self.y**self.weight_y)
+        # Calculate the new balance of y to maintain the invariant
+        new_y = (invariant_before / (new_x**self.weight_x)) ** (1 / self.weight_y)
+        # Calculate delta_y
+        delta_y = self.y - new_y
         # Update balances
-        self.balances[token_in] = balance_in
-        self.balances[token_out] -= amount_out
+        self.x = new_x
+        self.y = new_y
+        return delta_y
 
-        return amount_out
+    def swap_y_for_x(self, delta_y):
+        """
+        Swap y for x using the Balancer AMM model.
 
-    def add_liquidity(self, token, amount):
+        :param delta_y: Amount of y being swapped.
+        :return: The amount of x received in the swap.
         """
-        Add liquidity to the pool for a specific token.
-        :param token: Token for which liquidity is added.
-        :param amount: Amount of token added.
-        """
-        if token in self.balances:
-            self.balances[token] += amount
-        else:
-            print("Token not in pool.")
-
-    def remove_liquidity(self, token, amount):
-        """
-        Remove liquidity from the pool for a specific token.
-        :param token: Token for which liquidity is removed.
-        :param amount: Amount of token removed.
-        """
-        if token in self.balances and self.balances[token] >= amount:
-            self.balances[token] -= amount
-        else:
-            print("Insufficient balance or token not in pool.")
+        # Calculate new balance of y after adding delta_y
+        new_y = self.y + delta_y
+        # Calculate the invariant before the swap
+        invariant_before = (self.x**self.weight_x) * (self.y**self.weight_y)
+        # Calculate the new balance of x to maintain the invariant
+        new_x = (invariant_before / (new_y**self.weight_y)) ** (1 / self.weight_x)
+        # Calculate delta_x
+        delta_x = self.x - new_x
+        # Update balances
+        self.x = new_x
+        self.y = new_y
+        return delta_x
