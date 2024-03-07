@@ -5,7 +5,7 @@ from scipy.stats import norm
 ## In a liquidity position (x,y), x is amount of ETH, y is amount of USDC
 
 class UniswapV3:
-    def __init__(self, fee_rate):
+    def __init__(self, fee_rate, low_mean = 3400, high_mean = 4000, num_lp = 3200, vl_per_lp = 100000):
         self.fee_rate = fee_rate # assumes a constant fee rate
         self.liquidity_positions = {}
 
@@ -15,9 +15,9 @@ class UniswapV3:
         for i in range(10000):
             self.ticks.append(1.001**i)
 
-        self.instantiate_initial_liquidity_distribution()
+        self.instantiate_initial_liquidity_distribution(low_mean, high_mean, num_lp, vl_per_lp)
     
-    def instantiate_initial_liquidity_distribution(self, low_mean = 3400, high_mean = 4000, num_lp = 3200, vl_per_lp = 100000):
+    def instantiate_initial_liquidity_distribution(self, low_mean, high_mean, num_lp, vl_per_lp):
         ## for each tick, start with a certain amount of liquidity
         for i in range(len(self.ticks)-1):
             interval = (self.ticks[i], self.ticks[i+1])
