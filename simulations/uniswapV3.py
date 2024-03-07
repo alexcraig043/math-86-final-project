@@ -1,12 +1,12 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy.stats import norm
 
 ## In a liquidity position (x,y), x is amount of ETH, y is amount of USDC
 
 class UniswapV3:
-    def __init__(self, fee_rate, current_price):
+    def __init__(self, fee_rate):
         self.fee_rate = fee_rate # assumes a constant fee rate
-        self.price = current_price
         self.liquidity_positions = {}
 
         self.ticks = []
@@ -15,62 +15,79 @@ class UniswapV3:
         for i in range(10000):
             self.ticks.append(1.001**i)
 
-    def instantiate_initial_liquidity_distribution(self, total_liquidity):
+        self.instantiate_initial_liquidity_distribution()
+    
+    def instantiate_initial_liquidity_distribution(self, low_mean = 3400, high_mean = 4000, num_lp = 3200, vl_per_lp = 100000):
         ## for each tick, start with a certain amount of liquidity
         for i in range(len(self.ticks)-1):
             interval = (self.ticks[i], self.ticks[i+1])
             self.intervals.append(interval)
-            self.liquidity_positions[interval] = [0,0,0] # stands for token 1(ETH), 2(USDC), and total volume in thus position
-        center = self.match_position(self.price)
+            self.liquidity_positions[interval] = [0,0,0] # stands for token x, y, and L in this interval
 
-        ## Assign Liquidity
-        self.liquidity_positions[self.intervals[center]][2] = total_liquidity/2
-        self.liquidity_positions[self.intervals[center]][1] = 0.5*self.liquidity_positions[self.intervals[center]][2]
-        self.liquidity_positions[self.intervals[center]][0] = 0.5*self.liquidity_positions[self.intervals[center]][2]/self.intervals[center][0]
-        self.liquidity_positions[self.intervals[center]][2] = self.liquidity_positions[self.intervals[center]][0]*self.liquidity_positions[self.intervals[center]][1]
-        # second half
-        for j in range(center+1, len(self.intervals)):
-           self.liquidity_positions[self.intervals[j]][1] = 0.5*self.liquidity_positions[self.intervals[j-1]][2]/4
-           self.liquidity_positions[self.intervals[j]][0] = 0.5*self.liquidity_positions[self.intervals[j-1]][2]/4/self.intervals[j][0]
-           self.liquidity_positions[self.intervals[j]][2] = self.liquidity_positions[self.intervals[j]][0]*self.liquidity_positions[self.intervals[j]][1]
-        # first half
-        for j in range(center-1, -1, -1):
-            self.liquidity_positions[self.intervals[j]][1] = 0.5*self.liquidity_positions[self.intervals[j+1]][2]/4
-            self.liquidity_positions[self.intervals[j]][0] = 0.5*self.liquidity_positions[self.intervals[j+1]][2]/4/self.intervals[j][0]
-            self.liquidity_positions[self.intervals[j]][2] = self.liquidity_positions[self.intervals[j]][0]*self.liquidity_positions[self.intervals[j]][1]
+        self.generate_distribution(low_mean, high_mean, num_lp, vl_per_lp)
+        for interval in self.intervals:
+            vl = self.liquidity_positions[interval][2]
+            self.liquidity_positions[interval][0] = 0.5*vl/interval[0]
+            self.liquidity_positions[interval][1] = 0.5*vl
+            self.liquidity_positions[interval][2] = self.liquidity_positions[interval][0]*self.liquidity_positions[interval][1]
+
+
+    def swap_y_for_x(self, amount, current_price = 3800):
+
+        #determining which pool to use based on the current price
+        current_interval = self.match_position(current_price)
+        price = self.intervals[current_interval][0]  # x to y swap ratio
+        print(f"current price of x to y is {price}")
+
+        # calculate price change if we do it within the current interval
+        delta_y = (1-self.fee_rate)*amount  # y_in
+        delta_root_price = delta_y/self.liquidity_positions[self.intervals[current_interval]][2]
+        if price + delta_root_price**2 < self.intervals[current_interval][1]:
+            ## swapping within a tick, only root_p changes, L is constant
+            x_end = self.liquidity_positions[self.intervals[current_interval]][2]/(self.liquidity_positions[self.intervals[current_interval]][1]+delta_y)
+            delta_x = self.liquidity_positions[self.intervals[current_interval]][0] - x_end
+            self.liquidity_positions[self.intervals[current_interval]][0] += delta_x
+            self.liquidity_positions[self.intervals[current_interval]][1] += delta_y
+            print(f"You have swapped for {delta_x} token x, at the price of {price}, the change of price is {delta_root_price**2}")
+        else:
+            print("Not enough liquidity in current space, we move to another tick interval")
+            proper_tick = self.match_position(price + delta_root_price**2)
+            print(self.liquidity_positions[self.intervals[proper_tick]])
+            new_price = self.intervals[proper_tick][0]
+            x_end = self.liquidity_positions[self.intervals[proper_tick]][2]/(self.liquidity_positions[self.intervals[proper_tick]][1]+delta_y)
+            delta_x = self.liquidity_positions[self.intervals[proper_tick]][0] - x_end
+            self.liquidity_positions[self.intervals[proper_tick]][0] += delta_x
+            self.liquidity_positions[self.intervals[proper_tick]][1] += delta_y
+            print(f"You have swapped for {delta_x} token x, at the price of {new_price}, the change of price is {new_price-price}")
+        return delta_x
         
-    def swap(self, token_from, amount):
-        # Assumes there is enough liquidity for current range
-        # Simplified swap logic, not accounting for slippage or price impact
-        current_interval = self.match_position(self.price)
-        if token_from == "USDC":
-            ## in this case, amount of y(ETH) increases
-            self.price = self.intervals[current_interval][0]  # x to y swap ratio
-            print(f"current price of USDC to ETH is {self.price}")
-            root_price = np.sqrt(self.price)
-            l = self.liquidity_positions[self.intervals[current_interval]][2] # liquidity
-            delta_y = (1-self.fee_rate)*amount  # y_in
-            delta_root_price = delta_y/l
-            if self.price + delta_root_price**2 < self.intervals[current_interval][1]:
-                ## swapping within a tick, only root_p changes, L is constant
-                x_end = l/(self.liquidity_positions[self.intervals[current_interval]][1]+delta_y)
-                delta_x = self.liquidity_positions[self.intervals[current_interval]][0] - x_end
-                self.liquidity_positions[self.intervals[current_interval]][0] += delta_x
-                self.liquidity_positions[self.intervals[current_interval]][1] += delta_y
-                self.price += delta_root_price**2
-                print(f"You have swapped for {delta_x} ETHs, at the price of {self.price}")
+    def swap_x_for_y(self, amount, current_price = 3800):
+        #determining which pool to use based on the current price
+        current_interval = self.match_position(current_price)
+        price = 1/self.intervals[current_interval][0]  # x to y swap ratio
+        print(f"current price of y to x is {price}")
 
-
-            else:
-                print("Not enough liquidity in current space, we move to another tick interval")
-                proper_tick = self.match_position(self.price + delta_root_price**2)
-                # calculate new fee rate
-                self.price = self.intervals[proper_tick][0]
-                delta_x = self.liquidity_positions[self.intervals[proper_tick]][2]/root_price
-                delta_y = self.liquidity_positions[self.intervals[proper_tick]][2]*root_price
-                self.liquidity_positions[self.intervals[proper_tick]][0] += delta_x
-                self.liquidity_positions[self.intervals[proper_tick]][1] += delta_y 
-            return delta_y, self.price
+        # calculate price change if we do it within the current interval
+        delta_x = (1-self.fee_rate)*amount  # x_in
+        delta_root_price = delta_x/self.liquidity_positions[self.intervals[current_interval]][2]
+        if price + (delta_root_price)**2 > 1/self.intervals[current_interval][1]:
+            ## swapping within a tick, only root_p changes, L is constant
+            y_end = self.liquidity_positions[self.intervals[current_interval]][2]/(self.liquidity_positions[self.intervals[current_interval]][0]+delta_x)
+            delta_y = self.liquidity_positions[self.intervals[current_interval]][1] - y_end
+            self.liquidity_positions[self.intervals[current_interval]][0] += delta_x
+            self.liquidity_positions[self.intervals[current_interval]][1] += delta_y
+            print(f"You have swapped for {delta_y} token y, at the price of {price}, the change of price is {(delta_root_price)**2}")
+        else:
+            print("Not enough liquidity in current space, we move to another tick interval")
+            proper_tick = self.match_position(price + delta_root_price**2)
+            print(self.liquidity_positions[self.intervals[proper_tick]])
+            new_price = self.intervals[proper_tick][0]
+            x_end = self.liquidity_positions[self.intervals[proper_tick]][2]/(self.liquidity_positions[self.intervals[proper_tick]][1]+delta_y)
+            delta_x = self.liquidity_positions[self.intervals[proper_tick]][0] - x_end
+            self.liquidity_positions[self.intervals[proper_tick]][0] += delta_x
+            self.liquidity_positions[self.intervals[proper_tick]][1] += delta_y
+            print(f"You have swapped for {delta_y} token y, at the price of {new_price}, the change of price is {new_price-price}")
+        return delta_x
     
     # ---------------------------- HELPERS -----------------------------------
     def match_position(self, price):
@@ -78,6 +95,39 @@ class UniswapV3:
             if self.intervals[i][0] <= price <= self.intervals[i+1][1]:
                 return i
         return -1
+    
+    def match_2_position(self, a, b):
+        rl = [-1, -1]
+        for i in range(len(self.intervals)-1):
+            if self.intervals[i][0] <= a <= self.intervals[i+1][1]:
+                rl[0] = i
+            elif self.intervals[i][0] <= b <= self.intervals[i+1][1]:
+                rl[1] = i
+                break
+        return rl[0], rl[1]
+    
+    def generate_distribution(self, low_mean, high_mean, num_lp, vl_per_lp):
+        # arbitrary assumption
+        # intuition: aggregating LPs
+
+        ## Set each LP to provide liquidity on a interval [a,b]
+        ## let a be 2-week low, max be 2-week high, and a b are points on normal distribiutions centering at a and b
+        ## Choose a 5% std for each normal distribution
+        for i in range(num_lp):
+            low = 1
+            high = 0
+            # make sure after the loop, low <= high
+            while low > high:
+                # choose a
+                low = np.random.normal(loc=low_mean, scale=low_mean*0.05)
+                # choose b
+                high = np.random.normal(loc=high_mean, scale=high_mean*0.05)
+
+            # map to ticks
+            low_tick, high_tick = self.match_2_position(low, high)
+            for j in range(low_tick, high_tick+1):
+                self.liquidity_positions[self.intervals[j]][2] += vl_per_lp
+
 
 
 ## As of March 3rd, Uniswap has a TVL of 3.2b
@@ -89,29 +139,6 @@ class UniswapV3:
     ## Let it be 1/2 of total pool, next interval be (1/2)^(2+1), summing both side, we get 1
     ## Suppose it goes to infinity and range becomes (0,+infty)
 
-test = UniswapV3(0.0003, 3478)
-test.instantiate_initial_liquidity_distribution(3.2*10**6)
-test.swap("USDC", 100000)
-
-
-    # def add_liquidity(self, lower_price, upper_price, amount):
-    #     # Unique ID for the NFT representing the position
-    #     position_id = len(self.liquidity_positions) + 1
-    #     self.liquidity_positions[position_id] = {
-    #         'lower_price': lower_price,
-    #         'upper_price': upper_price,
-    #         'amount': amount
-    #     }
-    #     return position_id
-
-    # do we actually need this part?
-    # def remove_liquidity(self, position_id):
-    #     if position_id in self.liquidity_positions:
-    #         removed_liquidity = self.liquidity_positions[position_id]['amount']
-    #         del self.liquidity_positions[position_id]
-    #         self.total_liquidity -= removed_liquidity
-    #         return removed_liquidity
-    #     else:
-    #         return 0
-
-
+test = UniswapV3(0.0003)
+test.swap_y_for_x(10000)
+test.swap_x_for_y(20)
